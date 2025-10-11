@@ -297,6 +297,117 @@ fprintf('✓ PI+D LONGITUDINAL:\n');
 fprintf('  D  = %.4f\n', D_opt_lon);
 fprintf('  Kp = %.4f\n', Kp_lon);
 fprintf('  Ki = %.4f\n\n', Ki_lon);
+%% %% ============================
+%  H-infinity: LONGITUDINAL (δe→θ)
+% =============================
+
+% Selecciona canal: entrada δe (col 1), salida θ (fila 4)
+[num_Gth, den_Gth] = ss2tf(A_longmod, B_longmod(:,1), C_longmod(4,:), D_longmod(4,1));
+Gth = tf(num_Gth, den_Gth);
+Gth = minreal(Gth);
+
+% ===== Especificaciones en rad/s =====
+wb  = 2*pi*8;   % BW deseada >= 8 Hz
+wp  = 2*pi*6;   % perturbación hasta 6 Hz
+
+% ===== Escala de actuador (≈ ±30°) =====
+% Normalizamos el canal de control para que "1" ≈ 30°.
+u_max_rad = pi/6;   % 30 grados
+Su = u_max_rad;     % factor de escala
+Gth_n = Gth * Su;   % planta normalizada en la entrada (control "unitario" = 30°)
+
+% ===== Pesos de diseño (mixed-sensitivity) =====
+s = tf('s');
+
+% 1) Wp sobre S para seguimiento/robustez (BW >= 8 Hz, |S(0)| pequeño)
+%    Forma tipo (s/M + wb)/(s + wb*A)
+M  = 1.5;      % bound de pico de S (Ms ≲ M)
+A  = 1e-3;     % error estático (S(0) ≲ A)
+Wp = (s/M + wb) / (s + wb*A);
+
+% 2) Wu sobre KS para limitar esfuerzo de control (≈ saturación a 1 [=30°])
+%    Ganancia constante + ligero roll-off alto
+Wu = (1/0.7) * (s/wp + 1) / (s/(6*wp) + 1);
+%   penaliza KS en banda útil; 1/0.7 ≈ 1.43 da margen antes de saturar
+
+% 3) Wt sobre T para rechazo de ruido de medición (ruido blanco ~ 1e-4)
+%    T pequeño por encima de ~6–8 Hz.
+%    Forma tipo (s/Mt + wt)/(s + wt*At) con At pequeño para gran atenuación HF
+Mt = 1.3;      % bound de pico de T
+At = 1e-3;     % T(w→∞) pequeño
+wt = wb;       % transición ~ BW
+Wt = (s/Mt + wt) / (s + wt*At);
+
+% ===== Síntesis H∞ (mixed-sensitivity) =====
+% min || [Wp*S ; Wu*K*S ; Wt*T] ||∞
+[Khinf, CLhinf, gamma] = mixsyn(Gth_n, Wp, Wu, Wt);
+Khinf = minreal(Khinf);
+
+fprintf('\n=== H∞ (longitudinal) ===\n');
+fprintf('gamma = %.3f\n', gamma);
+
+% Controlador des-normalizado (volver a unidades originales de δe)
+% Gth_n = Gth * Su  =>  K_phys = Khinf / Su
+K_phys = Khinf / Su;
+K_phys = minreal(K_phys);
+
+% ===== Chequeos con sigma =====
+S = feedback(1,  Gth_n*Khinf);    % Sensitivity
+T = feedback(Gth_n*Khinf, 1);     % Complementary Sensitivity
+KS = minreal(series(Khinf, S));   % KS
+
+w = logspace(0, 3, 800); % 1 rad/s a 1000 rad/s
+
+figure('Name','Hinf Checks (sigma) - Longitudinal','Position',[50 50 1200 800]);
+subplot(3,1,1);
+sigma(Wp*S, w); grid on; title('|Wp*S| (seguimiento/robustez)');
+yline(0,':'); % 0 dB
+subplot(3,1,2);
+sigma(Wu*KS, w); grid on; title('|Wu*K*S| (esfuerzo de control)');
+yline(0,':');
+subplot(3,1,3);
+sigma(Wt*T, w); grid on; title('|Wt*T| (rechazo de ruido)');
+yline(0,':');
+
+% Norma Hinf aproximada (máx. valor singular)
+fprintf('||Wp*S||∞ ≈ %.2f dB\n', mag2db(max(squeeze(sigma(Wp*S, w)))));
+fprintf('||Wu*KS||∞ ≈ %.2f dB\n', mag2db(max(squeeze(sigma(Wu*KS, w)))));
+fprintf('||Wt*T||∞ ≈ %.2f dB\n', mag2db(max(squeeze(sigma(Wt*T, w)))));
+
+% ===== Verificación de BW y ruido =====
+figure('Name','S & T - Longitudinal'); 
+subplot(2,1,1); sigma(S, w); grid on; title('S (sensibilidad)');
+xline(wb,'--r','BW target');
+subplot(2,1,2); sigma(T, w); grid on; title('T (compl. sensibilidad)');
+xline(wp,'--k','noise/dist. cutoff');
+
+% ===== Respuesta temporal y damping =====
+T_cl = feedback(Gth*K_phys, 1);  % usar planta sin normalizar y K físico
+figure('Name','Step θ (Longitudinal)'); 
+step(T_cl, 3); grid on; title('Paso en θ (1 rad)');
+
+% Polos y amortiguamiento aproximado (pares complejos)
+p_cl = pole(T_cl);
+cc  = p_cl(abs(imag(p_cl))>1e-6);
+zeta = -real(cc)./abs(cc);
+fprintf('ζ mínimos (pares complejos): ');
+if ~isempty(zeta), fprintf('%.3f ', min(zeta)); else, fprintf('N/A '); end
+fprintf('\n');
+
+% Estimación de saturación de control ante escalón
+[yc,tc,xc] = step(feedback(series(Gth, K_phys), 1), 2);
+% señal de control u = K * e  (para referencia unitaria)
+% construir lazo para registrar u:
+sys_u = feedback(K_phys, Gth);  % desde r a u (cuando se arma de forma estándar)
+figure('Name','Control Effort (u)'); 
+step(sys_u, 2); grid on; title('Señal de control u (rad). Límite ≈ ±π/6');
+
+% ===== Reporte rápido =====
+fprintf('\n[REPORTE H∞ Longitudinal]\n');
+fprintf('- BW objetivo: %.2f Hz | BW observada (cruce T≈-3dB): inspeccionar curva T\n', wb/2/pi);
+fprintf('- Robustez (incertidumbre aditiva de entrada hasta 6 Hz): ver |Wp*S| y |Wu*KS|\n');
+fprintf('- Ruido (longitudinal ~1e-4): ver caída de T por encima de ~6–8 Hz\n');
+fprintf('- Esfuerzo de control: revisar step de u, chequear |u|max ≲ %.3f rad (30°)\n', u_max_rad);
 
 %% ========================================================================
 % PARTE 6: DISEÑO PI+D LATERAL (ROLL - φ)
