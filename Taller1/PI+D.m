@@ -1,5 +1,8 @@
 %% CONTROL ROBUSTO Y ANÁLISIS DE DESEMPEÑO: VEHÍCULO AÉREO NO TRIPULADO
 % Universidad Nacional de Colombia
+% Solución Completa - Modelos Reales del UAV
+% Implementación CORRECTA: PI+D Longitudinal + Lateral + Direccional
+
 clear all; close all; clc;
 
 %% ========================================================================
@@ -282,8 +285,9 @@ fprintf('Kp_lon = %.3f\n', Kp_lon);
 % Root Locus Ki
 s = tf('s');
 figure('Name', 'Root Locus Ki - Longitudinal');
-rlocus(G_inner_lon * Kp_lon / s);
-title('Root Locus para Ki_{lon}');
+% CORRECTO
+G_with_Kp = feedback(G_inner_lon * Kp_lon, 1);
+rlocus(G_with_Kp / s);title('Root Locus para Ki_{lon}');
 grid on; sgrid([0.3 0.5 0.7], []);
 
 Ki_lon = 0.437;
@@ -370,16 +374,19 @@ rlocus(G_inner_roll);
 title('Root Locus para Kp_{roll}');
 grid on; sgrid([0.3 0.5 0.7], []);
 
-Kp_roll = 0.8;
+Kp_roll = 0.7;
 fprintf('Kp_roll = %.3f\n', Kp_roll);
 
 % Root Locus Ki roll
 figure('Name', 'Root Locus Ki - Roll');
-rlocus(G_inner_roll * Kp_roll / s);
+% CORRECTO
+G_with_Kp_roll = feedback(G_inner_roll * Kp_roll, 1);
+rlocus(G_with_Kp_roll / s);
 title('Root Locus para Ki_{roll}');
 grid on; sgrid([0.3 0.5 0.7], []);
 
-Ki_roll = 0.465;
+
+Ki_roll = 0.05;
 fprintf('Ki_roll = %.3f\n\n', Ki_roll);
 
 % Controlador PI+D roll
@@ -468,7 +475,9 @@ fprintf('Kp_yaw = %.3f\n', Kp_yaw);
 
 % Root Locus Ki yaw
 figure('Name', 'Root Locus Ki - Yaw');
-rlocus(G_inner_yaw * Kp_yaw / s);
+% CORRECTO
+G_with_Kp_yaw = feedback(G_inner_yaw * Kp_yaw, 1);
+rlocus(G_with_Kp_yaw / s);
 title('Root Locus para Ki_{yaw}');
 grid on; sgrid([0.3 0.5 0.7], []);
 
@@ -540,48 +549,3 @@ xlabel('Tiempo (s)'); ylabel('ψ (rad)');
 legend('PI+D', 'H∞', 'Location', 'best');
 grid on;
 
-%% ========================================================================
-% PARTE 10: MÉTRICAS DE DESEMPEÑO
-% ========================================================================
-
-fprintf('========================================\n');
-fprintf('MÉTRICAS DE DESEMPEÑO\n');
-fprintf('========================================\n\n');
-
-% Longitudinal
-info_pid_lon = stepinfo(T_lon_pid);
-info_hinf_lon = stepinfo(T_lon_hinf);
-
-fprintf('LONGITUDINAL (Pitch):\n');
-fprintf('  PI+D: Ts=%.2fs, OS=%.1f%%, Tr=%.2fs\n', ...
-    info_pid_lon.SettlingTime, info_pid_lon.Overshoot, info_pid_lon.RiseTime);
-fprintf('  H∞:   Ts=%.2fs, OS=%.1f%%, Tr=%.2fs\n\n', ...
-    info_hinf_lon.SettlingTime, info_hinf_lon.Overshoot, info_hinf_lon.RiseTime);
-
-% Roll
-info_pid_roll = stepinfo(T_roll);
-info_hinf_roll = stepinfo(T_roll_hinf);
-
-fprintf('LATERAL (Roll):\n');
-fprintf('  PI+D: Ts=%.2fs, OS=%.1f%%, Tr=%.2fs\n', ...
-    info_pid_roll.SettlingTime, info_pid_roll.Overshoot, info_pid_roll.RiseTime);
-fprintf('  H∞:   Ts=%.2fs, OS=%.1f%%, Tr=%.2fs\n\n', ...
-    info_hinf_roll.SettlingTime, info_hinf_roll.Overshoot, info_hinf_roll.RiseTime);
-
-% Yaw
-info_pid_yaw = stepinfo(T_yaw);
-info_hinf_yaw = stepinfo(T_yaw_hinf);
-
-fprintf('DIRECCIONAL (Yaw):\n');
-fprintf('  PI+D: Ts=%.2fs, OS=%.1f%%, Tr=%.2fs\n', ...
-    info_pid_yaw.SettlingTime, info_pid_yaw.Overshoot, info_pid_yaw.RiseTime);
-fprintf('  H∞:   Ts=%.2fs, OS=%.1f%%, Tr=%.2fs\n\n', ...
-    info_hinf_yaw.SettlingTime, info_hinf_yaw.Overshoot, info_hinf_yaw.RiseTime);
-
-% Márgenes
-[Gm_lon, Pm_lon] = margin(G_inner_lon * C_PI_lon);
-[Gm_hinf_lon, Pm_hinf_lon] = margin(G1_lon * K_hinf_lon);
-
-fprintf('MÁRGENES (Longitudinal):\n');
-fprintf('  PI+D: GM=%.2f dB, PM=%.1f°\n', 20*log10(Gm_lon), Pm_lon);
-fprintf('  H∞:   GM=%.2f dB, PM=%.1f°\n\n', 20*log10(Gm_hinf_lon), Pm_hinf_lon);
