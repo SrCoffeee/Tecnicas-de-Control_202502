@@ -1,5 +1,4 @@
 # Preguntas difíciles (y respuestas) — Control AS5600 + L298N
-_Firma: Nadia_
 
 ## 1) ¿Por qué el PID linealizado a 47° no sirve en 90°?
 Porque \(k_\theta=MgL\cos\theta_0\). En \(90^\circ\), \(k_\theta=0\) y la planta es (casi) doble integrador amortiguado. Re-sintoniza allí, usa feed-forward gravitacional y/o un esquema robusto.
