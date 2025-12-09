@@ -21,7 +21,6 @@
  */
 
 #include <Wire.h>
-#include <MPU6050.h>
 
 // =============== PINES DEL L298N ===============
 const int ENA = 9;   // PWM
@@ -33,7 +32,6 @@ const int AS5600_ADDRESS = 0x36;
 const byte RAW_ANGLE_HIGH = 0x0C;
 const byte RAW_ANGLE_LOW = 0x0D;
 
-MPU6050 mpu;
 
 // =============== ENUMERACIONES ===============
 enum TipoControlador {
@@ -65,11 +63,11 @@ ModoOperacion modoActual = MODO_DETENIDO;
 // =============== PARÁMETROS COMUNES ===============
 const float Ts = 0.020;     // 20ms - 50Hz (mejor para control)
 const float PWM_MIN = 0.0;
-const float PWM_MAX = 38.0;
+const float PWM_MAX = 14.0;
 
 float setpoint = 0.0;
 float anguloInicial = 0.0;
-float setpointBase = 45.0;  // Setpoint por defecto
+float setpointBase = 90.0;  // Setpoint por defecto
 
 // =============== CONTROL PID ===============
 float Kp = 2.14;
@@ -179,24 +177,7 @@ void setup() {
   
   // Motor detenido
   detenerMotor();
-  
-  // Inicializar MPU6050
-  mpu.initialize();
-  
-  if (mpu.testConnection()) {
-    enviarMensaje("MPU6050_OK");
-  } else {
-    enviarMensaje("MPU6050_ERROR");
-  }
-  
-  // Calibrar MPU6050 (rápido)
-  mpu.setXAccelOffset(-1343);
-  mpu.setYAccelOffset(-1155);
-  mpu.setZAccelOffset(1165);
-  mpu.setXGyroOffset(49);
-  mpu.setYGyroOffset(-7);
-  mpu.setZGyroOffset(24);
-  
+
   // Esperar estabilización
   delay(500);
   
