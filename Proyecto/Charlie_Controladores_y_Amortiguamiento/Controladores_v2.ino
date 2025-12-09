@@ -14,7 +14,7 @@ const uint8_t PIN_IN1 = 7;
 const uint8_t PIN_IN2 = 8;
 
 /*** LÍMITES PWM ***/
-const uint8_t PWM_MAX_COUNTS   = 14;  // <- tope duro (tu límite)
+const uint8_t PWM_MAX_COUNTS   = 16.5;  // <- tope duro (tu límite)
 const uint8_t PWM_IMP_RECOM    = 10;  // <- sugerencia para impulsos manuales
 
 /*** I2C direcciones ***/
