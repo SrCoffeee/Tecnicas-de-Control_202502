@@ -114,6 +114,7 @@ void incrementarAntihorario() {
     Serial.print(porcentaje, 1);
     Serial.print(F("% | "));
     Serial.print(pwmValue);
+
     Serial.print(F(" | "));
     Serial.print(anguloActual, 2);
     Serial.print(F("° | "));
