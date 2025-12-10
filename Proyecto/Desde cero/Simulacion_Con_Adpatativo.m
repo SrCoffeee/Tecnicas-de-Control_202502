@@ -2,7 +2,7 @@
 clear; close all; clc;
 s = tf('s');  % Variable de Laplace
 
-%% ===== Parámetros de la planta nominal (del proyecto) =====
+%% ===== Parámetros nominales de la planta (del proyecto) =====
 J   = 1.08e-3;      % kg m^2
 Bv  = 2.61e-3;      % N m s/rad
 MgL = 4.999e-3;     % N m
@@ -13,8 +13,9 @@ th0 = deg2rad(50);  % punto de operación (50°)
 a0  = (MgL*cos(th0))/J;
 a1  = Bv/J;
 b0  = Ku/J;
-G   = tf(b0, [1 a1 a0]);          % modelo lineal
-Ts  = 0.01;                       % muestreo (Arduino / simulación)
+G   = tf(b0, [1 a1 a0]);
+Ts  = 0.01;          % muestreo (Arduino / simulación)
+
 disp('G(s) = b0/(s^2+a1 s + a0) con: [a0 a1 b0] =');
 disp([a0 a1 b0])
 
@@ -40,6 +41,7 @@ Tt    = 0.35;
 
 Cpid_s = Kp + Ki/s + (Kd*s)/(1+tau_d*s);
 Cid    = c2d(Cpid_s, Ts, 'tustin');
+
 disp('Ganancias PID [Kp Ki Kd tau_d Tt] =');
 disp([Kp Ki Kd tau_d Tt])
 
@@ -65,11 +67,11 @@ end
 
 %% ===== SMC (Sliding Mode) =====
 lambda    = 3.0;     % rad/s, define superficie
-k_torque  = 0.01;    % N·m, intensidad del switching
+k_torque  = 0.02;    % N·m, intensidad del switching
 phi       = 0.5;     % capa límite (reduce chattering)
 
 %% ===== Parámetros RLS para control adaptativo (APID) =====
-rls.Ku_hat = 0.6*Ku;         % estimación inicial equivocada a propósito
+rls.Ku_hat = 0.6*Ku;         % estimación inicial sesgada
 rls.B_hat  = 1.5*Bv;
 rls.P      = 10*eye(2);      % poca confianza inicial
 rls.lam    = 0.995;          % factor de olvido
@@ -247,30 +249,67 @@ end
 sgtitle('CONTROLADOR ADAPTATIVO PID (APID)','FontSize',16,'FontWeight','bold');
 
 %% =====================================================================
-%        Evolución de parámetros Ku_hat y B_hat para el APID (STEP)
+%        Evolución de parámetros Ku_hat y B_hat para STEP, RAMP, PULSET
 % ======================================================================
-% Simulamos solo el escalón con APID y recuperamos las estimaciones
-[~,~,Ku_hist,B_hist] = simNL(ref_step + th0, 'APID');
+Ku_all = zeros(length(t),3);
+B_all  = zeros(length(t),3);
+
+for i = 1:size(profiles,1)
+    r = profiles{i,2} + th0;
+    [~,~,Ku_hist,B_hist] = simNL(r,'APID');
+    Ku_all(:,i) = Ku_hist;
+    B_all(:,i)  = B_hist;
+end
 
 figure('Name','Evolución de parámetros del APID','NumberTitle','off');
-subplot(2,1,1);
-plot(t, Ku_hist, 'LineWidth',2); hold on;
+names = {'STEP','RAMP','PULSET'};
+
+subplot(2,3,1);
+plot(t, Ku_all(:,1), 'LineWidth',2); hold on;
 yline(Ku,'r--','LineWidth',1.5);
 xline(plantVar.t_change,'k--','Cambio planta');
-title('Estimación K_u^{hat}(t)');
-xlabel('Tiempo [s]');
-ylabel('K_u^{hat}');
-legend('Estimado','Valor nominal','Cambio planta','Location','best');
+title('K_u^{hat}(t) - STEP');
+xlabel('Tiempo [s]'); ylabel('K_u^{hat}');
 grid on;
 
-subplot(2,1,2);
-plot(t, B_hist, 'LineWidth',2); hold on;
+subplot(2,3,2);
+plot(t, Ku_all(:,2), 'LineWidth',2); hold on;
+yline(Ku,'r--','LineWidth',1.5);
+xline(plantVar.t_change,'k--');
+title('K_u^{hat}(t) - RAMP');
+xlabel('Tiempo [s]'); ylabel('K_u^{hat}');
+grid on;
+
+subplot(2,3,3);
+plot(t, Ku_all(:,3), 'LineWidth',2); hold on;
+yline(Ku,'r--','LineWidth',1.5);
+xline(plantVar.t_change,'k--');
+title('K_u^{hat}(t) - PULSET');
+xlabel('Tiempo [s]'); ylabel('K_u^{hat}');
+grid on;
+
+subplot(2,3,4);
+plot(t, B_all(:,1), 'LineWidth',2); hold on;
 yline(Bv,'r--','LineWidth',1.5);
-xline(plantVar.t_change,'k--','Cambio planta');
-title('Estimación B^{hat}(t)');
-xlabel('Tiempo [s]');
-ylabel('B^{hat}');
-legend('Estimado','Valor nominal','Cambio planta','Location','best');
+xline(plantVar.t_change,'k--');
+title('B^{hat}(t) - STEP');
+xlabel('Tiempo [s]'); ylabel('B^{hat}');
+grid on;
+
+subplot(2,3,5);
+plot(t, B_all(:,2), 'LineWidth',2); hold on;
+yline(Bv,'r--','LineWidth',1.5);
+xline(plantVar.t_change,'k--');
+title('B^{hat}(t) - RAMP');
+xlabel('Tiempo [s]'); ylabel('B^{hat}');
+grid on;
+
+subplot(2,3,6);
+plot(t, B_all(:,3), 'LineWidth',2); hold on;
+yline(Bv,'r--','LineWidth',1.5);
+xline(plantVar.t_change,'k--');
+title('B^{hat}(t) - PULSET');
+xlabel('Tiempo [s]'); ylabel('B^{hat}');
 grid on;
 
 %% =====================================================================
@@ -328,7 +367,7 @@ for k=1:N-1
   end
   
   e    = (ref(k)-theta(k));
-  u_ff_nom = (MgL/Ku)*sin(ref(k)); %#ok<NASGU> % por si se quiere comparar
+  u_ff_nom = (MgL/Ku)*sin(ref(k)); %#ok<NASGU>
   
   if strcmp(mode,'PID')
      % --- PID con filtro derivativo y anti-windup ---
@@ -382,7 +421,7 @@ for k=1:N-1
      
      % RLS: y = J*ddot(theta) + MgL*sin(theta) = [u, -omega]*[Ku;B]
      y_rls   = J*omegadot_meas + MgL*sin(theta_meas);
-     u_prev  = u_hist(max(k-1,1));   % entrada aplicada en paso previo
+     u_prev  = u_hist(max(k-1,1));
      phi_rls = [u_prev; -omega_meas];
      
      K_rls   = (P*phi_rls)/(lam_rls + phi_rls.'*P*phi_rls);
@@ -413,29 +452,24 @@ for k=1:N-1
      u     = max(-1,min(1,u_uns));
      Iint  = Iint + Ki*Ts*e + (Ts/Tt)*(u - u_uns);
      
-  else
-     % ---------- SMC ----------
-     % Superficie deslizante
-     s = omega + lambda*(ref(k) - theta(k));
-     
-     % Derivada de referencia
-     if k > 1
-         ref_dot = (ref(k) - ref(k-1))/Ts;
-     else
-         ref_dot = 0;
-     end
-     
-     % Control equivalente
-     u_eq = (B_true*omega + MgL*sin(theta(k)) ...
-             - J*lambda*(ref_dot - omega))/Ku_true;
-     
-     % Switching suavizado
-     u_sw = -(k_torque/Ku_true) * tanh(s/phi);
-     
-     % Ley total
-     u = u_eq + u_sw;
-     u = max(-1,min(1,u));
-  end
+else  % --- SMC ---
+    % Error de posición con signo correcto
+    e_theta = theta(k) - ref(k);
+    
+    % Superficie deslizante
+    s = omega + lambda * e_theta;
+    
+    % Control equivalente (regulación, NO seguimiento de trayectoria)
+    u_eq = (J*(-lambda*omega) + Bv*omega + MgL*sin(theta(k)))/Ku;
+    
+    % Término de conmutación
+    u_sw = -(k_torque/Ku) * tanh(s/phi);
+    
+    % Ley total
+    u = u_eq + u_sw;
+    u = max(-1,min(1,u));
+end
+
   
   % Dinámica no lineal (pendulito actuado) con planta "verdadera"
   domega = (Ku_true*u - B_true*omega - MgL*sin(theta(k)))/J;
