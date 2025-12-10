@@ -19,9 +19,9 @@ a2d = 2*zeta*wn + p3;
 a1d = wn^2 + 2*zeta*wn*p3;
 a0d = (wn^2)*p3;
 
-Kp    = (a2d - a1)/b0;
-Kd    = (a1d - a0)/b0;
-Ki    = a0d/b0;
+Kp    = 5.088;
+Kd    = 0.486;
+Ki    =7.0707;
 tau_d = 0.05;
 Tt    = 0.35;
 
