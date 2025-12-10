@@ -405,7 +405,7 @@ for k=1:N-1
 end
 
   
-  % Dinámica no lineal (Euler explícito)    
+  % Dinámica no lineal (Euler explícito)
   domega = (Ku*u - Bv*omega - MgL*sin(theta(k)))/J;
   omega  = omega + Ts*domega;
   theta(k+1) = theta(k) + Ts*omega;

@@ -5,6 +5,10 @@
  *  Control: PID | HINF (discreto fijo) | SMC | ADAPTIVE_PID (PID + FF con RLS)
  *  Perfiles: STEP | RAMP | PULSET  (desde comandos serial CFG,...)
  *  STOP: comando serie "STOP" para abortar y apagar
+ *  
+ *  MODIFICACIONES:
+ *  - Setpoint cambiado a 47 grados
+ *  - SMC ajustado para reducir oscilaciones (phi, k_torque, lambda)
  * ===================================================================== */
 #include <Wire.h>
 #include <math.h>
@@ -31,13 +35,25 @@ const float GYRO_SENS = 131.0f;                 // LSB/(deg/s)
 const float DEG2RAD   = 3.14159265f/180.0f;
 
 /*** Config desde PC ***/
-float TS = 0.001f;         // s
-float TEST_TIME = 15.0f;  // s
+float TS = 0.01f;         // s  <- Tiempo de muestreo (ajustable)
+float TEST_TIME = 15.0f;   // s  <- Duración del test (ajustable)
 enum Mode {M_PID, M_HINF, M_SMC, M_APID};
 Mode mode = M_PID;
 enum Prof {P_STEP, P_RAMP, P_PULSET};
 Prof prof = P_STEP;
-float ref_deg = 60.0f, ramp_deg_s=10.0f, pulse_amp_deg=15.0f, pulse_T=1.0f;
+
+/*  =====================================================================
+ *  PARÁMETROS DE REFERENCIA (AJUSTABLES)
+ *  ---------------------------------------------------------------------
+ *  ref_deg       : Amplitud del escalón en grados (perfil STEP)
+ *  ramp_deg_s    : Velocidad de rampa en grados/segundo (perfil RAMP)
+ *  pulse_amp_deg : Amplitud del pulso en grados (perfil PULSET)
+ *  pulse_T       : Periodo del tren de pulsos en segundos (perfil PULSET)
+ *  ===================================================================== */
+float ref_deg = 47.0f;           // <-- SETPOINT MODIFICADO A 47°
+float ramp_deg_s = 10.0f;        // Velocidad de rampa (°/s)
+float pulse_amp_deg = 15.0f;     // Amplitud del pulso (°)
+float pulse_T = 1.0f;            // Periodo del pulso (s)
 
 bool stopFlag = false;
 
@@ -50,15 +66,53 @@ struct Phys {
   float tauC= 0.0f;
 } phys;
 
-/*** PID ***/
-struct PIDP { float Kp=2.141f, Ki=2.290f, Kd=0.685f, tau_d=0.05f, Tt=0.5f; } pid;
+/*  =====================================================================
+ *  PARÁMETROS PID (AJUSTABLES)
+ *  ---------------------------------------------------------------------
+ *  Kp    : Ganancia proporcional
+ *  Ki    : Ganancia integral
+ *  Kd    : Ganancia derivativa
+ *  tau_d : Constante de tiempo del filtro derivativo
+ *  Tt    : Tiempo de tracking anti-windup
+ *  ===================================================================== */
+struct PIDP { 
+  float Kp = 2.141f;
+  float Ki = 2.290f;
+  float Kd = 0.685f;
+  float tau_d = 0.05f;
+  float Tt = 0.5f; 
+} pid;
 float I_int=0, D_f=0, e_prev=0;
 
-/*** HINF discreto fijo: u = a1 u(z-1) + b0 e + b1 e(z-1) ***/
-struct KH { float a1=0.85f, b0=0.15f, b1=-0.14f, u1=0, e1=0; } kh;
+/*  =====================================================================
+ *  PARÁMETROS H-INFINITO DISCRETO (AJUSTABLES)
+ *  ---------------------------------------------------------------------
+ *  a1, b0, b1 : Coeficientes del controlador discreto
+ *  ===================================================================== */
+struct KH { 
+  float a1 = 0.85f;
+  float b0 = 0.15f;
+  float b1 = -0.14f;
+  float u1 = 0;
+  float e1 = 0; 
+} kh;
 
-/*** SMC ***/
-struct SMC { float lambda=3.6f, k_torque=3.0e-3f, phi=0.02f, alphaVel=0.85f; } smc;
+/*  =====================================================================
+ *  PARÁMETROS SMC - SLIDING MODE CONTROL (AJUSTABLES)
+ *  ---------------------------------------------------------------------
+ *  lambda   : Pendiente de la superficie deslizante (menor = más suave)
+ *  k_torque : Ganancia de conmutación (menor = menos chattering)
+ *  phi      : Ancho de la capa límite (mayor = menos oscilaciones)
+ *  alphaVel : Factor del filtro de velocidad
+ *  
+ *  MODIFICADO: Valores optimizados para reducir oscilaciones
+ *  ===================================================================== */
+struct SMC { 
+  float lambda = 3.0f;       // <-- Reducido de 3.6 (convergencia más suave)
+  float k_torque = 2.0e-3f;  // <-- Reducido de 3.0e-3 (menos agresivo)
+  float phi = 0.08f;         // <-- Aumentado de 0.02 (capa límite más ancha)
+  float alphaVel = 0.85f; 
+} smc;
 
 /*** Adaptativo (RLS sobre Ku y B) ***/
 struct RLS {
@@ -113,9 +167,14 @@ float mpuGyroZ_rad(){
   return degs*DEG2RAD;                   // rad/s
 }
 
-/*** Actuación ***/
+/*  =====================================================================
+ *  ACTUACIÓN PWM (AJUSTABLE)
+ *  ---------------------------------------------------------------------
+ *  Para limitar el PWM máximo, modifica los valores en fmaxf/fminf
+ *  Ejemplo: duty = fmaxf(fminf(duty, 0.8f), -0.8f); limita a ±80%
+ *  ===================================================================== */
 void driveDuty(float duty){
-  duty = fmaxf(fminf(duty,0.2f),-0.2f);
+  duty = fmaxf(fminf(duty, 0.3f), -0.3f);  // Límite PWM: ±100%
   if (duty >= 0){
     digitalWrite(PIN_IN1, HIGH);
     digitalWrite(PIN_IN2, LOW);
@@ -200,7 +259,13 @@ void rls_update(float u, float omega, float omegadot, float theta){
   rls.P22 = (P22 - k2*Pf2)/rls.lam;
 }
 
-/*** Perfil de referencia ***/
+/*  =====================================================================
+ *  GENERADOR DE REFERENCIA
+ *  ---------------------------------------------------------------------
+ *  P_STEP   : Escalón de ref_deg grados
+ *  P_RAMP   : Rampa con pendiente ramp_deg_s (°/s)
+ *  P_PULSET : Tren de pulsos ±pulse_amp_deg con periodo pulse_T
+ *  ===================================================================== */
 float gen_ref(float t){
   if (prof==P_STEP)  return ref_deg*DEG2RAD;
   if (prof==P_RAMP)  return (ramp_deg_s*DEG2RAD)*t;

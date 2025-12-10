@@ -18,20 +18,20 @@ const byte RAW_ANGLE_LOW = 0x0D;
 
 // =============== PARÁMETROS DE PRUEBA ===============
 // FASE 1: IMPULSO INICIAL
-const float PWM_IMPULSO = 10.0;        // Potencia del impulso
+const float PWM_IMPULSO = 20.0;        // Potencia del impulso
 const int TIEMPO_IMPULSO = 500;        // Duración del impulso
 const int MUESTRAS_IMPULSO = 50;       // Lecturas durante el impulso
 const int INTERVALO_IMPULSO = 10;      // ms entre lecturas
 
 // FASE 2: STEP (escalón)
-const float PWM_STEP = 10.0;           // Potencia del step
+const float PWM_STEP = 20.0;           // Potencia del step
 const int TIEMPO_STEP = 5000;          // Duración total del step
 const int MUESTRAS_STEP = 50;          // Número de lecturas
 const int INTERVALO_STEP = 100;        // ms entre lecturas
 
 // FASE 3: BARRIDO INCREMENTAL
 const float PWM_MINIMO = 5.0;         // Inicio del barrido
-const float PWM_MAXIMO = 23.0;         // Fin del barrido
+const float PWM_MAXIMO = 45.0;         // Fin del barrido
 const float INCREMENTO_PWM = 1.0;      // Incremento por paso
 const int TIEMPO_ESTABILIZACION = 3000; // Tiempo por paso
 
